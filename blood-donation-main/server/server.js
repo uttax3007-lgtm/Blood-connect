@@ -24,8 +24,9 @@ app.use(cors({
 app.use(express.json({ limit: '16kb' }));
 
 const escapeRegExp = (value) =>
-  String(value).replace(/[.*+?^${}()|[\\]\\]/g, '\\app.use(express.json());');
-
+  String(value).split('').map((character) =>
+    '\\^$.*+?()[]{}|'.includes(character) ? `\\${character}` : character
+  ).join('');
 const safeSearchTerm = (value) =>
   escapeRegExp(String(value || '').trim().slice(0, 80));
 
