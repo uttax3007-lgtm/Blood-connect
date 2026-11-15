@@ -87,7 +87,7 @@ This project aligns with the **Winter of Code Social** mission — *using open s
 ### Clone the Repository ⤵️
 
 ```bash
-git clone https://github.com/darshan-totagi/blood-donation.git
+git clone https://github.com/uttax3007-lgtm/Blood-connect.git
 cd BloodConnect
 ````
 
