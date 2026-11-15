@@ -4,24 +4,31 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
+app.disable('x-powered-by');
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  process.env.FRONTEND_URL,  // set this in Render to your Vercel URL
+  process.env.FRONTEND_URL,
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin || allowedOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app')) {
+    // Non-browser clients do not send Origin; browser origins must match exactly.
+    if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    callback(new Error('Not allowed by CORS'));
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
+
+const escapeRegExp = (value) =>
+  String(value).split('').map((character) =>
+    '\\^$.*+?()[]{}|'.includes(character) ? `\\${character}` : character
+  ).join('');
+const safeSearchTerm = (value) =>
+  escapeRegExp(String(value || '').trim().slice(0, 80));
 
 const Donor = require('./models/Donor');
 const Request = require('./models/Request');
@@ -41,8 +48,11 @@ app.get('/api/donors', async (req, res) => {
     const { q, bloodGroup, city } = req.query;
     const filter = {};
     if (bloodGroup) filter.bloodGroup = bloodGroup;
-    if (q) filter.$or = [{ name: new RegExp(q, 'i') }, { phone: new RegExp(q, 'i') }];
-    if (city) filter.city = new RegExp(city, 'i');
+    if (q) {
+      const term = safeSearchTerm(q);
+      filter.$or = [{ name: new RegExp(term, 'i') }, { phone: new RegExp(term, 'i') }];
+    }
+    if (city) filter.city = new RegExp(safeSearchTerm(city), 'i');
 
     const donors = await Donor.find(filter).sort({ createdAt: -1 }).limit(200);
     res.json(donors);
@@ -130,7 +140,7 @@ app.get('/api/requests', async (req, res) => {
     const { status = 'open', bloodGroup, city } = req.query;
     const filter = { status };
     if (bloodGroup) filter.bloodGroup = bloodGroup;
-    if (city) filter.city = new RegExp(city, 'i');
+    if (city) filter.city = new RegExp(safeSearchTerm(city), 'i');
     const items = await Request.find(filter).sort({ neededBy: 1, createdAt: -1 }).limit(200);
     res.json(items);
   } catch (err) {
@@ -172,13 +182,19 @@ app.put('/api/requests/:id', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-const MONGO = process.env.MONGO_URI || 'mongodb://localhost:27017/blood-donor';
+const MONGO = process.env.MONGODB_URI || process.env.MONGO_URI;
 
-mongoose.connect(MONGO, { useNewUrlParser: true, useUnifiedTopology: true })
+if (!MONGO) {
+  console.error('Missing MONGODB_URI (or legacy MONGO_URI) environment variable');
+  process.exit(1);
+}
+
+mongoose.connect(MONGO)
   .then(() => {
     console.log('connected to mongo');
     app.listen(PORT, () => console.log('server running on port', PORT));
   })
   .catch(err => {
     console.error('mongo connection error', err);
+    process.exit(1);
   });
